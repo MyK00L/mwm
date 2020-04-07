@@ -56,7 +56,7 @@ const KEYS_TO_GRAB: [(u32, u32); 39] = [
 struct WindowManager {
     display: *mut xlib::Display,
     root_window: xlib::Window,
-		size: (u32,u32),
+    size: (u32, u32),
     windows: Vec<Window>,
     tags: u8,
 }
@@ -110,20 +110,20 @@ impl WindowManager {
             .iter()
             .filter(|w| w.tags & self.tags == 0)
             .for_each(|w| unsafe {
-                xlib::XMoveWindow(self.display, w.xid, (self.size.0*2) as i32, 0);
+                xlib::XMoveWindow(self.display, w.xid, (self.size.0 * 2) as i32, 0);
             });
     }
 
     fn new() -> WindowManager {
         let display: *mut xlib::Display = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
         let root_window: xlib::Window = unsafe { xlib::XDefaultRootWindow(display) };
-        let screen = unsafe{xlib::XDefaultScreen(display)};
-				let w = unsafe{xlib::XDisplayWidth(display,screen)} as u32;
-				let h = unsafe{xlib::XDisplayHeight(display,screen)} as u32;
-				WindowManager {
+        let screen = unsafe { xlib::XDefaultScreen(display) };
+        let w = unsafe { xlib::XDisplayWidth(display, screen) } as u32;
+        let h = unsafe { xlib::XDisplayHeight(display, screen) } as u32;
+        WindowManager {
             display: display,
             root_window: root_window,
-						size: (w,h),
+            size: (w, h),
             windows: Vec::<Window>::new(),
             tags: 1,
         }
@@ -202,12 +202,14 @@ impl WindowManager {
                         full: false,
                         float: false,
                     });
+                    println!("Managing window {}", unsafe { e.map_request.window });
                     unsafe {
                         xlib::XMapWindow(self.display, e.map_request.window);
                     }
                     self.reconfigure();
                 }
                 xlib::UnmapNotify => {
+                    println!("Removing window {}", unsafe { e.unmap.window });
                     match self
                         .windows
                         .iter()
