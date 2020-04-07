@@ -56,6 +56,7 @@ const KEYS_TO_GRAB: [(u32, u32); 39] = [
 struct WindowManager {
     display: *mut xlib::Display,
     root_window: xlib::Window,
+		size: (u32,u32),
     windows: Vec<Window>,
     tags: u8,
 }
@@ -85,35 +86,44 @@ impl WindowManager {
     }
 
     fn reconfigure(&self) {
-        let confs = layouts::get_layout(self.windows.len(), (800, 600));
-        for i in 0..self.windows.len() {
-            let mut changes = xlib::XWindowChanges {
-                x: (confs[i].0).0,
-                y: (confs[i].0).1,
-                width: (confs[i].1).0,
-                height: (confs[i].1).1,
-                border_width: 0,
-                sibling: 0,
-                stack_mode: 0,
-            };
-            eprintln!("window to change: {}", self.windows[i].xid);
+        let to_display: Vec<u64> = self
+            .windows
+            .iter()
+            .filter(|w| w.tags & self.tags != 0)
+            .map(|w| w.xid)
+            .collect();
+        let confs = layouts::get_layout(to_display.len(), self.size);
+        for i in 0..to_display.len() {
+            println!("window to display: {}", to_display[i]);
             unsafe {
-                xlib::XConfigureWindow(
+                xlib::XMoveResizeWindow(
                     self.display,
-                    self.windows[i].xid,
-                    (xlib::CWX | xlib::CWY | xlib::CWWidth | xlib::CWHeight) as u32,
-                    &mut changes,
+                    to_display[i],
+                    confs[i].x,
+                    confs[i].y,
+                    confs[i].w,
+                    confs[i].h,
                 );
             }
         }
+        self.windows
+            .iter()
+            .filter(|w| w.tags & self.tags == 0)
+            .for_each(|w| unsafe {
+                xlib::XMoveWindow(self.display, w.xid, (self.size.0*2) as i32, 0);
+            });
     }
 
     fn new() -> WindowManager {
         let display: *mut xlib::Display = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
         let root_window: xlib::Window = unsafe { xlib::XDefaultRootWindow(display) };
-        WindowManager {
+        let screen = unsafe{xlib::XDefaultScreen(display)};
+				let w = unsafe{xlib::XDisplayWidth(display,screen)} as u32;
+				let h = unsafe{xlib::XDisplayHeight(display,screen)} as u32;
+				WindowManager {
             display: display,
             root_window: root_window,
+						size: (w,h),
             windows: Vec::<Window>::new(),
             tags: 1,
         }
@@ -135,7 +145,7 @@ impl WindowManager {
             unsafe {
                 xlib::XNextEvent(self.display, &mut e);
             }
-            //eprintln!("\n{:?}", e);
+            //println!("\n{:?}", e);
             match unsafe { e.type_ } {
                 xlib::KeyPress => {
                     match unsafe {
@@ -153,28 +163,34 @@ impl WindowManager {
                             return;
                         }
                         (MOD_SHIFT, x11::keysym::XK_c) => {
-                            let mut w: xlib::Window = 0;
-                            let mut a: i32 = 0;
+                            println!("killing {}", unsafe { e.key.subwindow });
                             unsafe {
-                                xlib::XGetInputFocus(self.display, &mut w, &mut a);
-                            }
-                            if w != 0 {
-                                unsafe {
-                                    xlib::XKillClient(self.display, w);
+                                if e.key.subwindow != 0 {
+                                    xlib::XKillClient(self.display, e.key.subwindow);
                                 }
                             }
                         }
                         (MOD, num @ x11::keysym::XK_1..=x11::keysym::XK_8) => {
                             self.tags = 1 << (num - x11::keysym::XK_1);
+                            self.reconfigure();
                         }
                         (MOD_CTRL, num @ x11::keysym::XK_1..=x11::keysym::XK_8) => {
                             self.tags |= 1 << (num - x11::keysym::XK_1);
+                            self.reconfigure();
                         }
                         (MOD_SHIFT, num @ x11::keysym::XK_1..=x11::keysym::XK_8) => {
-                            //window tags = 1<<(num-x11::keysym::XK_1);
+                            self.windows
+                                .iter_mut()
+                                .filter(|w| w.xid == unsafe { e.key.subwindow })
+                                .for_each(|w| w.tags = 1 << (num - x11::keysym::XK_1));
+                            self.reconfigure();
                         }
                         (MOD_CTRL_SHIFT, num @ x11::keysym::XK_1..=x11::keysym::XK_8) => {
-                            //window tags |= 1<<(num-x11::keysym::XK_1);
+                            self.windows
+                                .iter_mut()
+                                .filter(|w| w.xid == unsafe { e.key.subwindow })
+                                .for_each(|w| w.tags |= 1 << (num - x11::keysym::XK_1));
+                            self.reconfigure();
                         }
                         _ => {}
                     }
