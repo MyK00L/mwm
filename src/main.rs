@@ -94,7 +94,6 @@ impl WindowManager {
             .collect();
         let confs = layouts::get_layout(to_display.len(), self.size);
         for i in 0..to_display.len() {
-            println!("window to display: {}", to_display[i]);
             unsafe {
                 xlib::XMoveResizeWindow(
                     self.display,
@@ -121,8 +120,8 @@ impl WindowManager {
         let w = unsafe { xlib::XDisplayWidth(display, screen) } as u32;
         let h = unsafe { xlib::XDisplayHeight(display, screen) } as u32;
         WindowManager {
-            display: display,
-            root_window: root_window,
+            display,
+            root_window,
             size: (w, h),
             windows: Vec::<Window>::new(),
             tags: 1,
@@ -145,7 +144,7 @@ impl WindowManager {
             unsafe {
                 xlib::XNextEvent(self.display, &mut e);
             }
-            //println!("\n{:?}", e);
+            eprintln!("\n{:?}", e);
             match unsafe { e.type_ } {
                 xlib::KeyPress => {
                     match unsafe {
@@ -157,19 +156,19 @@ impl WindowManager {
                         (MOD, x11::keysym::XK_d) => {
                             std::process::Command::new("dmenu_run")
                                 .spawn()
-                                .expect(&format!("could not spawn dmenu, line {}", line!()));
+                                .expect("could not spawn dmenu :(");
                         }
                         (MOD_SHIFT, x11::keysym::XK_q) => {
                             return;
                         }
-                        (MOD_SHIFT, x11::keysym::XK_c) => {
-                            println!("killing {}", unsafe { e.key.subwindow });
-                            unsafe {
-                                if e.key.subwindow != 0 {
-                                    xlib::XKillClient(self.display, e.key.subwindow);
-                                }
+                        (MOD_SHIFT, x11::keysym::XK_c) => unsafe {
+                            eprintln!("I'mma kill {}", e.key.subwindow);
+                            if e.key.subwindow != 0 {
+                                xlib::XKillClient(self.display, e.key.subwindow);
                             }
-                        }
+                            xlib::XSync(self.display, 0);
+                            eprintln!("YAY I did it!!!");
+                        },
                         (MOD, num @ x11::keysym::XK_1..=x11::keysym::XK_8) => {
                             self.tags = 1 << (num - x11::keysym::XK_1);
                             self.reconfigure();
@@ -202,23 +201,18 @@ impl WindowManager {
                         full: false,
                         float: false,
                     });
-                    println!("Managing window {}", unsafe { e.map_request.window });
                     unsafe {
                         xlib::XMapWindow(self.display, e.map_request.window);
                     }
                     self.reconfigure();
                 }
                 xlib::UnmapNotify => {
-                    println!("Removing window {}", unsafe { e.unmap.window });
-                    match self
+                    if let Some(index) = self
                         .windows
                         .iter()
                         .position(|x| x.xid == unsafe { e.unmap.window })
                     {
-                        Some(index) => {
-                            self.windows.remove(index);
-                        }
-                        _ => {}
+                        self.windows.remove(index);
                     }
                     self.reconfigure();
                 }
